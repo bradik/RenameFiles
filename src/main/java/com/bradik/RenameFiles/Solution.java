@@ -1,5 +1,6 @@
 package com.bradik.RenameFiles;
 
+import com.bradik.RenameFiles.Timer.Progress;
 import org.apache.commons.cli.ParseException;
 
 import java.io.*;
@@ -15,10 +16,7 @@ public class Solution {
 
     private static Solution instance = new Solution();
 
-    private Path dirIn;
-    private Path dirOut;
-    private Path logFile;
-    private String pattern;
+    private CmdOptionReder options;
 
     public static void main(String[] args) throws IOException {
 
@@ -36,58 +34,75 @@ public class Solution {
 
     public void run() throws IOException {
 
-
-        FileNamePattern fileNamePattern = new FileNamePattern(pattern);
+        Path dirIn = Paths.get(options.getDirIn());
+        Path dirOut = Paths.get(options.getDirOut());
+        Path logFile = options.getLogFile() == null ? null : Paths.get(options.getLogFile());
 
 
         List<Path> pathList = Files.walk(dirIn).filter(path -> path.toFile().isFile()).collect(Collectors.toList());
 
         FileLog fileLog = new FileLog(logFile);
 
+        Map<Path, Path> map = new LinkedHashMap<>();
 
         for (Path sourse : pathList) {
-            if (logFile!=null&&sourse.getFileName().equals(logFile.getFileName()))
+            if (logFile != null && sourse.getFileName().equals(logFile.getFileName()))
                 continue;
 
-            Path target = fileNamePattern.replacePath(sourse, dirIn, dirOut);
+            FileNameChanger nameChanger = new FileNameChanger(sourse);
 
-            fileLog.println(sourse.toString());
-            fileLog.println(target.toString());
+            for (Map.Entry<String, String> entry : options.getListChange().entrySet()) {
 
-            if (dirIn.equals(dirOut)){
+                nameChanger.replace(entry.getKey(), entry.getValue(), options.isUseRegExp());
+            }
+
+            nameChanger.createFileName(options.getNewFileName());
+
+            Path target = nameChanger.getResolvePath(dirIn, dirOut);
+
+//            fileLog.println(sourse.toString());
+//            fileLog.println(target.toString());
+
+            map.put(sourse, target);
+
+        }
+
+        Progress progress = new Progress(map.size());
+
+        Path sourse, target;
+        for (Map.Entry<Path, Path> entry : map.entrySet()) {
+
+            sourse = entry.getKey();
+            target = entry.getValue();
+
+            if (dirIn.equals(dirOut)) {
 
                 //Files.move(sourse,target, StandardCopyOption.ATOMIC_MOVE);
-            }else{
+            } else {
 
-//                if (!Files.exists(target.getParent()))
-//                    Files.createDirectories(target.getParent());
-//
-//                Files.copy(sourse,target, StandardCopyOption.REPLACE_EXISTING);
+                if (!Files.exists(target.getParent()))
+                    Files.createDirectories(target.getParent());
+
+                Files.copy(sourse,target, StandardCopyOption.REPLACE_EXISTING);
+
             }
+
+            progress.add().show();
         }
+
 
         fileLog.close();
     }
 
     public boolean init(String[] args) {
 
-        CmdOptionReder optionReder;
-
         try {
-            optionReder = CmdOptionReder.getInstance().read(args);
+            options = CmdOptionReder.getInstance().read(args).validation();
 
         } catch (ParseException e) {
             System.err.println("Parsing failed.  Reason: " + e.getMessage());
             return false;
         }
-
-        if (!optionReder.validation())
-            return false;
-
-        pattern = optionReder.getPattern();
-        dirIn = Paths.get(optionReder.getDirIn());
-        dirOut = Paths.get(optionReder.getDirOut());
-        logFile = optionReder.getLogFile() == null ? null : Paths.get(optionReder.getLogFile());
 
         return true;
     }
